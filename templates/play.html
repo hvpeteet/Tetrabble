@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html>
+
+    <head>
+    
+        <title>Tetris-Scrabble Play</title>
+        <script type="text/javascript" src="http://ajax.googleapis.com/ajax/libs/jquery/1.10.1/jquery.min.js"></script>
+        <style>
+        
+            h1{
+                font-family : sans-serif;
+                margin-left : 75px;
+            }
+            
+            body{
+                background-image : url("/static/Images/background.png");
+                background-size : 200%;
+            }
+            
+            .in_queue{
+                width : {{ tile_side_len - 2}}px;
+                height : {{ tile_side_len - 2}}px;
+                z-index : 12;
+                position : relative;
+                overflow : hidden;
+                background-position: center center;
+                background-size: cover;
+            }
+            
+            .selected{
+                opacity : .4;
+            }
+            
+            .background_column{
+                float : left;
+                width : {{ tile_side_len }}px;
+                z-index : 2;
+            }
+            
+            .background_tile{
+                position : relative;
+                z-index : 2;
+                border : 1px solid #f5f5f5;
+                width : {{tile_side_len}}px;
+                height : {{ tile_side_len }}px;
+                float : left;
+            }
+            
+            .tile{
+                width : {{ tile_side_len - 2}}px;
+                height : {{ tile_side_len - 2}}px;
+                z-index : 12;
+                position : absolute;
+                top : 2px;
+                left : 92px;
+                overflow : hidden;
+                background-position: center center;
+                background-size: cover;
+            }
+            
+            #level{
+                background-color : white;
+                padding-right : 30px;
+                padding-top : 4px;
+                font-family : sans-serif;
+                color : red;
+                font-size : 20px;
+                text-align : right;
+                height : 50px;
+                width : 50px;
+                top : 200px;
+                left : 350px;
+                border : solid 3px #000;
+                position : absolute;
+                z-index : 1;
+                background-position: center center;
+                background-size: cover;
+            }
+            
+            #LevelNumber{
+                font-size : 24px;
+                color : red;
+                z-index : 10;
+            }
+            #test{
+                width : 48px;
+                height : 48px;
+                z-index : 1;
+                position : absolute;
+                background-color :red;
+                
+            }
+            
+            
+            #game{
+                height : {{tile_side_len * n_tiles_high + 25}}px;
+            }
+            
+            #board{
+                z-index : 0;   
+                background-color : #d2be9b;
+                border : 3px solid #000000;
+                text-align : center;
+                width : {{tile_side_len * n_tiles_wide + 2}}px;
+                height : {{tile_side_len * n_tiles_high + 20}}px;
+                margin-left : 75px;
+                margin-bottom : 75px;
+                margin-right : 20px;
+                margin-top : 40px;
+                position : absolute;
+            }
+            
+            #letters_on_deck{
+                background-color : #d2be9b;
+                border : 3px solid #000000;
+                width : {{ tile_side_len * queue_len - 6}}px;
+                height : {{tile_side_len - 2}}px;
+                float : left;
+                position : relative;
+                margin-top : -5px;
+                margin-left : 222px;
+                z-index : 0;
+                position : absolute;
+            }
+            
+            #left_column{
+                height : 100%;
+                float : left;
+                position : absolute;
+            }
+            
+            #right_column{
+                height : 100%;
+                float : left;
+            }
+                        
+            #sidebuttons{
+                margin-left : 330px;
+                margin-top : 40px;
+            }
+            
+            #downbutton{
+                margin-left : 357px;
+                margin-top : -3px;
+            }
+            
+            #gameplay_buttons{
+                margin-left : 330px;
+                margin-top : 145px;
+            }
+            
+            #score{
+                background-image : url("/static/Images/score.png"); 
+                padding-right : 30px;
+                padding-top : 4px;
+                font-family : sans-serif;
+                color : red;
+                font-size : 20px;
+                text-align : right;
+                height : 28px;
+                width : 92px;
+                margin-top : -5px;
+                margin-left : 335px;
+                border : solid 3px #000;
+                position : absolute;
+                z-index : 1;
+                background-position: center center;
+                background-size: cover;
+            }
+            
+            #endgame {
+                position : absolute;
+                z-index : 100;
+                left : 83px;
+                top : 150px;
+                visibility : hidden;
+            }
+            
+        </style>
+        
+        <script>
+        // ------------------------------------------------------------------------------
+        // Helper functions
+        // ------------------------------------------------------------------------------
+            function range(start, stop, step){
+                if (typeof stop=='undefined'){
+                    // one param defined
+                    stop = start;
+                    start = 0;
+                };
+                if (typeof step=='undefined'){
+                    step = 1;
+                };
+                if ((step>0 && start>=stop) || (step<0 && start<=stop)){
+                    return [];
+                };
+                var result = [];
+                for (var i=start; step>0 ? i<stop : i>stop; i+=step){
+                    result.push(i);
+                };
+                return result;
+            };
+            
+        // ------------------------------------------------------------------------------
+        // Board construction
+        // ------------------------------------------------------------------------------ 
+            var queue = [];
+            var Board = [];
+            var AvailableIds = [];
+            var current_tile_id = 0;
+            var InPlayIds = [];
+            var score = 0;
+            var PossiblyFreeTiles = [];
+            var CurrentSelection = [];
+            var game_running = true;
+            var Dictionary = {{Dictionary}};
+            var paused = false;
+            var words_till_next_level = 2;
+            var level = 0;
+            var time = [1600,400,1000,800,600,300,300,300];
+            var weighted_list = ['a','a','a','a','a','a','a','a','a',
+                                'b','b','c','c','d','d','d','d','e',
+                                'e','e','e','e','e','e','e','e','e',
+                                'e','e','f','f','g','g','h','h','i',
+                                'i','i','i','i','i','i','i','i','j',
+                                'k','l','l','l','l','m','m','n','n',
+                                'n','n','n','n','o','o','o','o','o',
+                                'o','o','o','p','p','q','r','r','r',
+                                'r','r','r','s','s','s','s','t','t',
+                                't','t','t','t','u','u','u','u','v',
+                                'v','w','w','x','y','y','z',]
+            var LetterPoints = {'a' : 1,'b' : 3,'c' : 3,'d' : 2,
+                                'e' : 1,'f' : 4,'g' : 2,'h' : 4,
+                                'i' : 1,'j' : 8,'k' : 5,'l' : 1,
+                                'm' : 3,'n' : 1,'o' : 1,'p' : 3,
+                                'q' : 10,'r' : 1,'s' : 1,'t' : 1,
+                                'u' : 1,'v' : 4,'w' : 4,'x' : 8,
+                                'y' : 4,'z' : 10}
+            
+            
+            for (id in range({{n_tiles_high}} * {{n_tiles_wide}})){
+                    AvailableIds.push(id);
+            }
+            for (y in range({{n_tiles_high}})){
+                row = []
+                for (x in range({{n_tiles_wide}})){
+                    value = 0;
+                    id = 'empty';
+                    row[x] = {'value' : value, 'id' : id};
+                }
+                Board[y] = row;
+            }
+            
+        // ------------------------------------------------------------------------------
+        // Board methods
+        // ------------------------------------------------------------------------------
+        
+            var getTile = function(x,y){
+                return Board[y][x];
+            }; 
+            
+            var getTileById = function(id){
+                var y = 0;
+                var x = 0;
+                for (y in Board){
+                    for (x in Board[y]){
+                        if (id == Board[y][x].id){
+                            return Board[y][x];
+                        }
+                    }
+                }
+            console.log("IdSearchFailed");
+            };
+            
+            var setTile = function(x,y,letter){
+                Board[y][x] = letter;
+            };
+            
+            var getTilePosition = function(id){//TestDisplay
+                var y = 0;
+                var x = 0;
+                for (y in Board){
+                    for (x in Board[y]){
+                        if (id == Board[y][x].id){
+                            return {'x': parseInt(x), 'y':parseInt(y)};
+                        }
+                    }
+                }
+            };
+            
+            var getRenderedPosition = function(id){
+               pos = getTilePosition(id);
+               x = pos.x;
+               y = pos.y;
+               
+               x *= {{ tile_side_len }};
+               y *= {{ tile_side_len + 2 }};
+               
+               // corrections for css
+               
+               x += 2;
+               y += 2;
+               return {'x' : x,'y' : y};
+            };
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+            
+            var moveTileDown = function(id){
+                try{
+                    if (canTileMoveDown(id)){
+                        var tile = getTileById(id);
+                        var tile_pos = getTilePosition(id);
+                        var x = tile_pos.x;
+                        var y = tile_pos.y;         
+                    
+                        setTile(x,y+1,tile);
+                        setTile(x,y,{'value':0, 'id':'empty'});
+                        var new_pos = getRenderedPosition(id);
+                        var change = {"left":new_pos.x,"top" : new_pos.y};
+                        // $("#" + id).stop().animate(change,"fast");
+                        document.getElementById(id).style.top = (new_pos.y + "px");
+                    }
+                    else{
+                        if (current_tile_id == id){
+                            if(!shouldEndGame()){
+                                InPlayIds.push(id);
+                                addTileToBoard();
+                            }
+                        }
+                        var index = PossiblyFreeTiles.indexOf(id);
+                        PossiblyFreeTiles.splice(index,1);
+                    }
+                }
+                catch (TypeError){
+                }
+                
+                
+            };
+            
+            var moveTileRight = function(id){
+                if (canTileMoveRight(id)){
+                    var tile = getTileById(id);
+                    var tile_pos = getTilePosition(id);
+                    var x = tile_pos.x;
+                    var y = tile_pos.y;
+                    setTile(x+1,y,tile);
+                    setTile(x,y,{'value':0, 'id':'empty'});
+                    var new_pos = getRenderedPosition(id);
+                    var change = {"left":new_pos.x,"top" : new_pos.y};
+//                     $("#" + id).stop().animate(change,"slow");
+                    document.getElementById(id).style.left = (new_pos.x + "px");
+                }
+            };
+            
+            var moveTileLeft = function(id){
+                if (canTileMoveLeft(id)){
+                    var tile = getTileById(id);
+                    var tile_pos = getTilePosition(id);
+                    var x = tile_pos.x;
+                    var y = tile_pos.y;
+                    setTile(x-1,y,tile);
+                    setTile(x,y,{'value':0, 'id':'empty'});
+                    var new_pos = getRenderedPosition(id);
+                    var change = {"left":new_pos.x,"top" : new_pos.y};
+//                     $("#" + id).stop().animate(change,"slow");
+                    document.getElementById(id).style.left = (new_pos.x + "px");
+                }
+
+            };
+            
+            var moveTileDown_button = function(){
+                moveTileDown(current_tile_id);
+            };
+            
+            var moveTileRight_button = function(){
+                moveTileRight(current_tile_id);
+            };
+            
+            var moveTileLeft_button = function(){
+                moveTileLeft(current_tile_id);
+            };
+            
+            var canTileMoveDown = function(id){
+                if (paused){
+                return false;
+                }
+                var tile = getTilePosition(id);
+                var x = tile.x;
+                var y = tile.y;
+                try{
+                    if (getTile(x,y+1).id == 'empty'){
+                        return true;
+                    }
+                    else{
+                        return false;
+                    }
+                }
+                catch(TypeError){
+                    return false;
+                }
+                
+            };
+            
+            var canTileMoveRight = function(id){
+                if (paused){
+                return false;
+                }
+                var tile = getTilePosition(id);
+                var x = tile.x;
+                var y = tile.y;
+                try{
+                    if ((x+1) > (Board[0].length-1)){
+                        throw TypeError;
+                    }
+                    if (getTile(x+1,y).id == 'empty'){
+                        return true;
+                    }
+                    else{
+                        return false;
+                    }
+                }
+                catch(TypeError){
+                    return false;
+                }
+                
+            };
+            
+            var canTileMoveLeft = function(id){
+                if (paused){
+                return false;
+                }
+                var tile = getTilePosition(id);
+                var x = tile.x;
+                var y = tile.y;
+                try{
+                    if ((x-1) < 0){
+                        throw TypeError;
+                    }
+                    if (getTile(x-1,y).id == 'empty'){
+                        return true;
+                    }
+                    else{
+                        return false;
+                    }
+                }
+                catch(TypeError){
+                    return false;
+                }
+                
+            };
+            
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+            
+            var addTileToBoard = function(){
+                if (!paused){
+                    var letter = queue[queue.length - 1];
+                    var diff = 0;
+                    for (diff in range(queue.length-1)){
+                        queue[queue.length - 1 - diff] = queue[queue.length - 2 - diff];
+                    }
+                    queue[0] = RandomWeightedLetter();
+                    DisplayQueue();
+//                     console.log(queue);
+                    var ni = document.getElementById('board');
+                    var new_tile = document.createElement('div');
+                    var url = '/static/Images/Tiles/' + letter + '.png';
+                    var id = AvailableIds[0];
+                    AvailableIds.splice(0,1);
+                
+                    new_tile.setAttribute('id',id);
+                    current_tile_id = id;
+                    new_tile.setAttribute('class','tile');
+                    letter = {'value' : letter, 'id' : id};
+                    setTile(3,0,letter);
+    //                 new_tile.innerHTML = id;
+                    ni.appendChild(new_tile);
+                    PossiblyFreeTiles.push(id);
+                    $('#' + id)[0].style.backgroundImage = "url(" + url + ")";
+                    $("#" + id).on("click",SelectHandler(id));
+                }
+
+            };
+            
+            var AddAllTilesToPossiblyFree = function(){
+                PossiblyFreeTiles = []
+                for (y in Board){
+                    var row = Board[y]
+                    for (item in row){
+                        if (row[item].id != 'empty'){
+                            PossiblyFreeTiles.push(row[item].id)
+                        }
+                    } 
+                }
+            };
+            
+            var RecycleSelection = function(){
+                for (item in CurrentSelection){
+                    var id = CurrentSelection[item].id;
+                    var visual = document.getElementById(id);
+                    visual.parentNode.removeChild(visual);
+                    var pos = getTilePosition(id);
+                    var empty_letter = {'value' : 0, 'id' : 'empty'};
+//                     console.log("DELETE LOCATION " + pos.x + "---" + pos.y + getTile(pos.x,pos.y).value);
+                    var x = pos.x;
+                    var y = pos.y;
+                    Board[y][x] = empty_letter;
+                    AvailableIds.push(id);
+                    
+                }
+            };
+            
+            var ScoreSelection = function(){
+                var character = 'a';
+                
+                if (SelectionIsWord()){
+                    var new_score = 0;
+                    var wordlength = CurrentSelection.length;
+                    for (letter in CurrentSelection){
+                        character = CurrentSelection[letter].value;
+                        new_score += LetterPoints[character];
+                        
+                    }
+//                     console.log("=======================");
+//                     console.log(wordlength,new_score,score);
+                    new_score *= wordlength;
+                    score += new_score;
+//                     console.log(wordlength,new_score,score);
+//                     console.log("=======================");
+                    DisplayScore();
+
+                    RecycleSelection();
+                    AddAllTilesToPossiblyFree();
+                    CurrentSelection = [];
+                    words_till_next_level -= 1;
+                    if(words_till_next_level == 0){
+                        level +=1;  
+                        words_till_next_level = 2;
+                        DisplayLevel();
+                    }
+                }
+                else{
+                    for (var tile in CurrentSelection){
+                        var tile_id = CurrentSelection[tile].id;
+//                         console.log(tile_id);
+                        document.getElementById(tile_id).className = "tile";
+                    }
+                    CurrentSelection = [];
+                }
+            };
+            
+            
+            var DisplayLevel = function(){
+                var level_holder = document.getElementById('level');
+                try{
+                    var old = document.getElementById("LevelNumber")
+                    level_holder.removeChild(old);
+                }
+                catch (Error){
+                }
+                var new_par = document.createElement('div');
+                new_par.setAttribute('id',"LevelNumber");
+                new_par.innerHTML = ("Level : " + level);
+                level_holder.appendChild(new_par);
+            }
+            
+            var DisplayScore = function(){
+                var score_holder = document.getElementById('score');
+                try{
+                    var old = document.getElementById("ScoreNumber")
+                    score_holder.removeChild(old);
+                }
+                catch (Error){
+                }
+                var new_par = document.createElement('div');
+                new_par.setAttribute('id',"ScoreNumber");
+                new_par.innerHTML = score;
+                score_holder.appendChild(new_par);
+            }
+            
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+            
+            var SelectHandler = function (id){
+                return function(){
+                    if((!canTileMoveDown(id)) && (id != current_tile_id)){
+                        var tile = getTileById(id);
+                        if (CurrentSelection.length != 0){ //If it is not the first time
+                            var previous_tile = getTileById(parseInt(CurrentSelection[CurrentSelection.length-1].id));
+                            var previous_x = getTilePosition(parseInt(previous_tile.id)).x;
+                            var previous_y = getTilePosition(parseInt(previous_tile.id)).y;
+                            var x = parseInt(getTilePosition(id).x);
+                            var y = parseInt(getTilePosition(id).y);
+//                             console.log("Critical ---------",previous_y,y);
+                            if ((previous_y == y) && 
+                                    ((previous_x == parseInt(x)-1) 
+                                    || (previous_x == parseInt(x)+1))){ // if next to prev elem
+//                                 console.log("matched");
+                                CurrentSelection.push(tile);
+                            }
+                            else{ // if not next to prev elem
+                                var new_tile = 0;
+                                if((previous_x != x )|| (previous_y != y)){
+                                    for (var tile in CurrentSelection){
+                                        var tile_id = CurrentSelection[tile].id;
+                                        new_tile = getTileById(tile_id);
+//                                         console.log(tile_id);
+                                        document.getElementById(tile_id).className = "tile";
+                                    }
+                                CurrentSelection = [getTileById(id),];
+//                                 console.log("out of order, first tile set");
+//                                 console.log(CurrentSelection);
+                                }
+                            
+                            }
+                        }
+                        else{ // if it is the first time
+//                             console.log("first tile set");
+                            CurrentSelection.push(tile);
+                        }
+                        //always
+                        for (var tile in CurrentSelection){
+                            var tile_id = CurrentSelection[tile].id;
+//                             console.log("Critical ------- " + tile_id);
+                            document.getElementById(tile_id).className += " selected";
+                        }
+                    
+                    }
+                }
+            };
+
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+            var shouldEndGame = function(){
+                for (var row in Board){
+                    if(Board[row][3].id == "empty"){
+                        return false;
+                    }
+                }
+                return true;
+            };
+            
+            var SelectionIsWord = function(){
+                // analyse CurrentSelection and compare to dictionary
+                //return true if current selection is a word
+                //return false otherwise
+                var selectedWord = "";
+                for (letter in CurrentSelection){
+                    selectedWord += CurrentSelection[letter].value;
+                }
+//                 console.log(selectedWord);
+                if (Dictionary[selectedWord]){
+                    return true;
+                }
+                
+                else {
+//                     console.log("Disabled");
+                    return false;
+                }
+                
+                
+                
+            };
+            
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+
+            var SortPossiblyFreeTiles = function(){
+                var item = 0;
+                var positions = [];
+                for(item in PossiblyFreeTiles){
+                    var id = PossiblyFreeTiles[item];
+                    positions.push(getTilePosition(id)['y']);
+                }
+                var positions_i = []
+                for (item in positions){
+                    positions_i[item] = parseInt(positions[item]);
+                }
+                var positions_s = positions.sort(function(a,b){return a-b});;
+                var newlist = [];
+                for (var place in positions){
+                    for (var item in PossiblyFreeTiles){
+                        if(getTilePosition(PossiblyFreeTiles[item]).y == positions[place]){
+                            newlist.push(PossiblyFreeTiles[item]);
+                            PossiblyFreeTiles.splice(item,1);
+                            item -= 1;
+                        }
+                    }
+                }
+                PossiblyFreeTiles = newlist;
+                PossiblyFreeTiles.reverse();
+            };
+            
+            var RandomWeightedLetter = function(){
+                rand_int = Math.round(Math.random() * (weighted_list.length-1));
+                letter = weighted_list[rand_int];
+                
+                return letter;
+            };
+                 
+// - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
+            
+            var pause_play = function(){
+//                     console.log("clicked");
+                    paused = !paused;
+            };
+            
+            var EndGame = function(){
+                pause_play();
+                var pause_button = document.getElementById("pause");
+                pause_button.style.visibility = "hidden";
+                score_selection.style.visibility = "hidden";
+                endgame.style.visibility = "visible";
+                queue = [];
+                console.log("endgame");
+            };
+            
+            var DisplayQueue = function(){
+                var QueueDiv = document.getElementById('letters_on_deck');
+                while (QueueDiv.firstChild) {
+                    QueueDiv.removeChild(QueueDiv.firstChild);
+                }
+                for (item in queue){
+                    var image_url = "/static/Images/Tiles/" + queue[queue.length-item-1] + ".png";
+                    var new_preview = document.createElement('img');
+                    new_preview.setAttribute("class", "in_queue");
+                    new_preview.src = image_url;
+                    QueueDiv.appendChild(new_preview);
+                }
+            }
+            
+// ------------------------------------------------------------------------------
+        // Listeners and Keyboard Handlers
+// ------------------------------------------------------------------------------
+            
+            document.addEventListener('keydown', function(e)
+                {
+                id = current_tile_id;
+                    switch(e.keyCode)
+                    {
+                            case 37: // left
+                                    moveTileLeft(id);
+                                    break;
+
+
+                            case 39: // right
+                                    moveTileRight(id);
+                                    break;
+
+                            case 40: // down
+                                    moveTileDown(id);
+                                    event.preventDefault();
+                                    break;
+                                    
+                            case 13: //enter
+                                ScoreSelection();
+                                break;
+                    }
+                });    
+                
+            $(document).ready(function(main){
+//                 for (i in range({{queue_len}})){
+//                     queue.push(RandomWeightedLetter());
+//                 }
+                queue.push(RandomWeightedLetter());
+                queue.push(RandomWeightedLetter());
+                queue.push(RandomWeightedLetter());
+//                 console.log(queue);
+                addTileToBoard();
+                $("#move_down").click(moveTileDown_button);
+                $("#move_left").click(moveTileLeft_button);
+                $("#move_right").click(moveTileRight_button);
+                $("#pause").click(pause_play);
+                $("#score_selection").click(ScoreSelection);
+                DisplayScore();
+                DisplayLevel();
+                gameLoop();
+                
+                
+                
+            });
+            
+// ------------------------------------------------------------------------------
+        // Game Loop
+// ------------------------------------------------------------------------------
+
+            var gameLoop = function(){
+                setTimeout(
+                    function(){
+                        if (game_running){
+                            var item = 0;
+                            if(shouldEndGame()){
+                                EndGame();
+                                game_running = false;
+                            }
+                            AddAllTilesToPossiblyFree();
+                            SortPossiblyFreeTiles();
+                            var done = false;
+                            var number_till_done = PossiblyFreeTiles.length;
+                            var current_index = 0;
+                            while (number_till_done > 0){
+                                var id = PossiblyFreeTiles[current_index];
+                                if(canTileMoveDown(id)){
+                                   current_index ++; 
+                                }
+                                moveTileDown(id);
+                                number_till_done --;
+                                
+                            
+                            }
+                            console.log("new itteration");
+                            gameLoop();
+                        }
+                    }
+                ,time[level])
+            };
+            
+        </script>
+            
+        </script>
+    </head>
+
+    <body>
+<!-- 
+        <nav>
+            <a href = "/play">Play</a>
+            <a href = "/">Profile</a>
+        </nav>
+ -->
+        <br>
+        <img id = "title" src = "/static/Images/Title.png" width = 400px style = "margin-left: 50px">
+        </br>
+        <div id = 'left_column'>
+            <div id  ="score"></div>
+            <div id = "level"></div>
+            <div id = "letters_on_deck">
+                {% for x in range(queue_len) %}
+            <div class = "background_tile"></div>
+            
+            
+            
+                {% endfor %}
+            </div>
+            <div id = "board">
+                {% for x in range(n_tiles_wide) %}
+                    <div class = "background_column">
+                    {% for x in range(n_tiles_high) %}
+                        <div class = "background_tile"></div>
+                    {% endfor %}
+                    </div>
+                {% endfor %}
+            
+            </div>
+        </div>
+        <div id = "right_column">
+            <div id = "sidebuttons">
+                <img id="move_left" src="/static/Images/Buttons/leftfloat.png" alt="Left Button" width= 50px>
+                <img id = "move_right" src="/static/Images/Buttons/rightfloat.png" alt="Right Button" width= 50px>
+            </div>
+            <div id = 'downbutton'>
+                 <img id = "move_down" src="/static/Images/Buttons/downfloat.png" alt="Down Button" width= 50px>
+            </div>
+            <div id ='gameplay_buttons'>
+                <img id = "score_selection" src = "/static/Images/Buttons/score.png" width = 50px>
+                <img id = "pause" src="/static/Images/Buttons/pausefloat.png" alt="Pause Button" width= 50px>
+<!-- 
+                <img id = "save_and_quit" src="/static/Images/Buttons/savefloat.png" alt="Save Button" width= 50px>
+ -->
+            </div>
+        </div>
+        <img id="endgame" src="/static/Images/gameover.png" alt="Game Over" width = 249px>
+
+    </body>
+
+</html>
